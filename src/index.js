@@ -6,7 +6,7 @@ dotenv.config();
 console.log('OPENAI_API_KEY exists:', !!process.env.OPENAI_API_KEY);
 
 const { App } = require('@slack/bolt');
-const { handleHireMessage, handleConfirmHire, handleRejectHire } = require('./slack');
+const { handleHireMessage, handleConfirmHire, handleRejectHire, handleSubmitHireInfo } = require('./slack');
 const { setupGoogleSheets } = require('./sheets');
 const { parseHireMessage } = require('./openai');
 const fs = require('fs');
@@ -230,7 +230,22 @@ app.action('reject_hire', async ({ ack, body, client }) => {
     console.error('Error in reject action:', error);
     await client.chat.postMessage({
       channel: body.container.channel_id,
-      text: "❌ Sorry, something went wrong. Please try submitting the hire request again."
+      text: "❌ Sorry, something went wrong while cancelling the hire. Please try again."
+    });
+  }
+});
+
+app.action('submit_hire_info', async ({ ack, body, client }) => {
+  await ack();
+  console.log('Submit hire info button clicked:', body);
+  
+  try {
+    await handleSubmitHireInfo({ body, ack, client });
+  } catch (error) {
+    console.error('Error in submit hire info action:', error);
+    await client.chat.postMessage({
+      channel: body.container.channel_id,
+      text: "❌ Sorry, something went wrong while saving your information. Please try again."
     });
   }
 });
