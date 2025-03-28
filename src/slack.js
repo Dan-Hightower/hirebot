@@ -1,6 +1,7 @@
 const { parseHireMessage } = require('./openai');
-const { appendHireData, updateHireData } = require('./sheets');
+const { appendHireData, createHireRecord } = require('./sheets');
 const axios = require('axios');
+const DeelAPI = require('./deel');
 
 async function handleHireMessage(message, client) {
   try {
@@ -9,7 +10,10 @@ async function handleHireMessage(message, client) {
 
     // Add hiring manager info
     const hiringManager = `<@${message.user}>`;
-    const hireData = { ...parsedData, hiringManager };
+    const initialData = { ...parsedData, hiringManager };
+
+    // Store the initial data (but don't write to sheets yet)
+    await appendHireData(initialData);
 
     // Create confirmation message with more details
     const confirmationBlocks = [
@@ -84,7 +88,7 @@ async function handleHireMessage(message, client) {
           },
           style: 'primary',
           action_id: 'confirm_hire',
-          value: JSON.stringify(hireData)
+          value: JSON.stringify(initialData)
         },
         {
           type: 'button',
@@ -394,19 +398,80 @@ async function handleSubmitHireInfo({ body, ack, client }) {
   await ack();
   
   try {
-    const { slackHandle } = JSON.parse(body.actions[0].value);
+    console.log('Processing form submission:', JSON.stringify(body.state.values, null, 2));
+    
+    // Parse the initial hire data
+    const initialData = JSON.parse(body.actions[0].value);
     
     // Get values from the form
-    const additionalData = {
+    const supplementalData = {
       fullName: body.state.values.full_name.full_name_input.value,
       address: body.state.values.address.address_input.value,
       personalEmail: body.state.values.personal_email.personal_email_input.value,
       phoneNumber: body.state.values.phone_number.phone_number_input.value,
-      currentTitle: body.state.values.current_title.current_title_input.value || ''
+      currentTitle: body.state.values.current_title?.current_title_input?.value || ''
     };
 
-    // Update Google Sheets with the additional information
-    await updateHireData(slackHandle, additionalData);
+    console.log('Form data:', supplementalData);
+    console.log('Initial hire data:', initialData);
+
+    // Split full name into first and last name for Deel
+    const [firstName, ...lastNameParts] = supplementalData.fullName.trim().split(' ');
+    const lastName = lastNameParts.join(' ');
+
+    if (!firstName || !lastName) {
+      throw new Error('Please provide both first and last name');
+    }
+
+    let deelCandidateId = null;
+    let deelError = null;
+
+    // Try to create Deel candidate
+    try {
+      console.log('Creating Deel candidate...');
+      const deel = new DeelAPI(
+        process.env.DEEL_CLIENT_ID,
+        process.env.DEEL_CLIENT_SECRET
+      );
+      const deelResult = await deel.createCandidate({
+        firstName,
+        lastName,
+        email: supplementalData.personalEmail,
+        role: initialData.role,
+        startDate: initialData.startDate,
+        country: 'US'
+      });
+
+      console.log('Deel API response:', deelResult);
+
+      if (deelResult.success) {
+        deelCandidateId = deelResult.candidateId;
+      } else {
+        deelError = deelResult.error;
+      }
+    } catch (deelErr) {
+      console.error('Error creating Deel candidate:', deelErr);
+      deelError = deelErr.message;
+    }
+
+    // Create the complete hire record in Google Sheets
+    console.log('Creating hire record in Google Sheets...');
+    await createHireRecord(initialData, {
+      ...supplementalData,
+      deelCandidateId
+    });
+
+    console.log('Google Sheets record created successfully');
+
+    // Prepare success message
+    let successMessage = `Thanks for submitting your information! 🎉\n\nI've recorded your details and someone from the team will be in touch with next steps. We're looking forward to working with you! 🚀`;
+    
+    // Add Deel status to the message
+    if (deelCandidateId) {
+      successMessage += `\n\n*Deel Profile ID:* \`${deelCandidateId}\``;
+    } else {
+      successMessage += `\n\n⚠️ Note: There was an issue creating your Deel profile (${deelError}). HR has been notified and will help set this up manually.`;
+    }
 
     // Send confirmation message
     await client.chat.update({
@@ -417,12 +482,28 @@ async function handleSubmitHireInfo({ body, ack, client }) {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `Thanks for submitting your information! 🎉\n\nI've recorded your details and someone from the team will be in touch with next steps. We're looking forward to working with you! 🚀`
+            text: successMessage
           }
         }
       ],
       text: 'Information submitted successfully'
     });
+
+    // Notify in the original hiring thread if we have it
+    if (body.container?.thread_ts) {
+      let threadMessage = `✅ ${initialData.slackHandle} has submitted their information`;
+      if (deelCandidateId) {
+        threadMessage += ` and their Deel profile has been created (ID: ${deelCandidateId})`;
+      } else {
+        threadMessage += `. Note: Deel profile creation failed (${deelError}) and will need manual setup.`;
+      }
+      
+      await client.chat.postMessage({
+        channel: body.channel.id,
+        thread_ts: body.container.thread_ts,
+        text: threadMessage
+      });
+    }
 
   } catch (error) {
     console.error('Error handling hire info submission:', error);
@@ -431,7 +512,7 @@ async function handleSubmitHireInfo({ body, ack, client }) {
     await client.chat.postMessage({
       channel: body.channel.id,
       thread_ts: body.message.ts,
-      text: 'Sorry, there was an error saving your information. Please try again or contact HR for assistance.'
+      text: `Sorry, there was an error processing your information: ${error.message}. Please try again or contact HR for assistance.`
     });
   }
 }
