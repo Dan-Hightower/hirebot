@@ -1,6 +1,8 @@
 # Slack Hiring Assistant Bot
 
-A Slack bot that helps streamline the process of kicking off new hires by parsing unstructured hiring messages, confirming details, and logging to Google Sheets.
+A Slack bot that helps streamline the process of kicking off new hires by parsing unstructured hiring messages, confirming details, and initiating downstream automations. 
+
+For this repo, I've simply config'd it to drop the new hire data into Google Sheets, but you should hit your HRIS/payroll API and cap table platform directly if possible.
 
 ## Features
 
