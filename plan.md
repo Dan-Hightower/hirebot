@@ -33,6 +33,12 @@ npm install @slack/bolt openai @google-cloud/sheets dotenv
 2. Append confirmed hires to sheet
 3. Basic error handling
 
+### Phase 5: Deel Integration (1 hour)
+1. Set up Deel API client
+2. Create candidate in Deel when hire is confirmed
+3. Handle API errors and responses
+4. Add Deel candidate ID to Google Sheet
+
 ## 4. Project Structure
 ```
 /
@@ -40,6 +46,7 @@ npm install @slack/bolt openai @google-cloud/sheets dotenv
 ├── index.js               # Main bot code
 ├── openai.js             # GPT message parsing
 ├── sheets.js             # Google Sheets logic
+├── deel.js               # Deel API integration
 └── package.json
 ```
 
@@ -66,26 +73,42 @@ async function appendHireData(data) {
 }
 ```
 
+### deel.js
+```javascript
+async function createCandidate(hireData) {
+  // Create candidate in Deel
+  // Return candidate ID
+}
+
+async function getCandidateStatus(candidateId) {
+  // Check candidate status
+}
+```
+
 ## 6. Post-MVP Features (If Time Permits)
 1. Better error handling
 2. Duplicate prevention
 3. Data validation
 4. Basic logging
+5. Track Deel candidate status changes
 
 ## 7. Required Credentials
 - Slack Bot Token
 - Slack Signing Secret
 - OpenAI API Key
 - Google Sheets Service Account JSON
+- Deel API Token
+- Deel Client ID
 
 ## 8. Testing Strategy
 - Manual testing of happy path
 - Basic error cases
 - Test with various message formats
+- Verify Deel candidate creation
 
 ## 9. Timeline
 
-Total Time: 4-6 hours
+Total Time: 5-7 hours
 - Setup: 30 mins
-- Core Features: 3-4 hours
+- Core Features: 4-5 hours
 - Testing & Fixes: 30-90 mins 

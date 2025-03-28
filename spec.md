@@ -70,6 +70,7 @@ This bot streamlines the process of kicking off a new hire in Slack. It accepts 
   - `SLACK_SIGNING_SECRET`
   - `OPENAI_API_KEY`
   - `GOOGLE_SHEETS_CREDENTIALS` (or path to credentials JSON)
+  - `DEEL_API_TOKEN`
 
 ---
 
