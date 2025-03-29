@@ -1,5 +1,5 @@
 const { parseHireMessage } = require('./openai');
-const { appendHireData, createHireRecord } = require('./sheets');
+const { appendHireData, createHireRecord, findLastRowBySlackHandle, updateHireRecord } = require('./sheets');
 const axios = require('axios');
 const DeelAPI = require('./deel');
 
@@ -13,9 +13,6 @@ async function handleHireMessage(message, client) {
     const hiringManager = `<@${message.user}>`;
     const initialData = { ...parsedData, hiringManager };
     console.log('Initial data before button:', JSON.stringify(initialData, null, 2));
-
-    // Store the initial data (but don't write to sheets yet)
-    await appendHireData(initialData);
 
     // Create confirmation message with more details
     const confirmationBlocks = [
@@ -87,7 +84,14 @@ async function handleHireMessage(message, client) {
       hiringManager
     };
 
-    console.log('Button value before stringify:', JSON.stringify(buttonValue, null, 2));
+    console.log('DEBUG - Creating button value with data:', JSON.stringify({
+      role: parsedData.role,
+      salary: parsedData.salary,
+      equity: parsedData.equity,
+      startDate: parsedData.startDate,
+      slackHandle: parsedData.slackHandle,
+      hiringManager
+    }, null, 2));
 
     // Add confirmation buttons
     confirmationBlocks.push({
@@ -142,6 +146,13 @@ async function handleConfirmHire({ body, client }) {
     const hireData = JSON.parse(buttonValue);
     console.log('Parsed hire data from button:', JSON.stringify(hireData, null, 2));
 
+    // DEBUG: Log specific fields
+    console.log('DEBUG - Checking specific fields:');
+    console.log('salary:', hireData.salary);
+    console.log('equity:', hireData.equity);
+    console.log('role:', hireData.role);
+    console.log('startDate:', hireData.startDate);
+
     // Verify salary and equity are present
     if (!hireData.salary || !hireData.equity) {
       console.error('Missing salary or equity in hire data:', hireData);
@@ -166,6 +177,8 @@ async function handleConfirmHire({ body, client }) {
     // If Slack handle provided, send welcome message
     if (hireData.slackHandle) {
       try {
+        console.log('DEBUG - Attempting to send DM to:', hireData.slackHandle);
+        
         const welcomeBlocks = [
           {
             type: 'section',
@@ -282,23 +295,57 @@ async function handleConfirmHire({ body, client }) {
             ]
           }
         ];
-
+        
         // Extract username from slack handle (handles both <@U123> and @username formats)
-        let userId = hireData.slackHandle.match(/<@(U[A-Z0-9]+)>/)?.[1];
-        if (!userId) {
+        let userId;
+        const userIdMatch = hireData.slackHandle.match(/<@(U[A-Z0-9]+)>/);
+        
+        if (userIdMatch) {
+          userId = userIdMatch[1];
+          console.log('DEBUG - Extracted user ID from handle:', userId);
+        } else {
           // If we don't have a user ID, try to look it up by username
-          const username = hireData.slackHandle.replace(/[<@>]/g, '');
-          console.log('Looking up user by username:', username);
+          // Remove any @ symbol and angle brackets
+          const username = hireData.slackHandle.replace(/^@/, '').replace(/[<>]/g, '');
+          console.log('DEBUG - Looking up user by username:', username);
           
           try {
             // Try to find user by username
             const userList = await client.users.list();
-            const user = userList.members.find(u => u.name === username || u.id === username);
+            console.log('DEBUG - Got user list, searching for:', username);
+            
+            // Try different ways to match the user
+            const user = userList.members.find(u => {
+              const matchesUsername = u.name?.toLowerCase() === username.toLowerCase();
+              const matchesRealName = u.real_name?.toLowerCase() === username.toLowerCase();
+              const matchesDisplayName = u.profile?.display_name?.toLowerCase() === username.toLowerCase();
+              const matchesEmail = u.profile?.email?.toLowerCase() === username.toLowerCase();
+              
+              if (matchesUsername || matchesRealName || matchesDisplayName || matchesEmail) {
+                console.log('DEBUG - Found user match:', {
+                  id: u.id,
+                  name: u.name,
+                  real_name: u.real_name,
+                  display_name: u.profile?.display_name,
+                  matched_on: matchesUsername ? 'username' : 
+                             matchesRealName ? 'real_name' : 
+                             matchesDisplayName ? 'display_name' : 'email'
+                });
+                return true;
+              }
+              return false;
+            });
             
             if (user) {
               userId = user.id;
-              console.log('Found user ID:', userId);
+              console.log('DEBUG - Found user ID:', userId);
             } else {
+              console.log('DEBUG - Available users:', userList.members.map(u => ({
+                id: u.id,
+                name: u.name,
+                real_name: u.real_name,
+                display_name: u.profile?.display_name
+              })));
               throw new Error(`Could not find user with username: ${username}`);
             }
           } catch (error) {
@@ -307,7 +354,7 @@ async function handleConfirmHire({ body, client }) {
           }
         }
 
-        console.log('Attempting to send DM to user ID:', userId);
+        console.log('DEBUG - Final user ID for DM:', userId);
 
         try {
           // First verify the user exists and get their info
@@ -316,7 +363,13 @@ async function handleConfirmHire({ body, client }) {
             throw new Error(`User lookup failed: ${userInfo.error}`);
           }
 
-          console.log('User info retrieved:', userInfo.user.name);
+          console.log('DEBUG - User info retrieved:', {
+            id: userInfo.user.id,
+            name: userInfo.user.name,
+            real_name: userInfo.user.real_name,
+            is_bot: userInfo.user.is_bot,
+            deleted: userInfo.user.deleted
+          });
 
           // Open DM channel with notification preference override
           const conversationResponse = await client.conversations.open({
@@ -328,7 +381,7 @@ async function handleConfirmHire({ body, client }) {
           }
 
           const channelId = conversationResponse.channel.id;
-          console.log('DM channel opened:', channelId);
+          console.log('DEBUG - DM channel opened:', channelId);
 
           // Send welcome message to DM channel
           const dmResult = await client.chat.postMessage({
@@ -341,6 +394,8 @@ async function handleConfirmHire({ body, client }) {
             throw new Error(`Failed to send DM: ${dmResult.error}`);
           }
 
+          console.log('DEBUG - DM sent successfully');
+
           // Notify about successful DM in the original channel
           await axios.post(body.response_url, {
             text: `✅ Hire logged successfully and I've sent a welcome message to ${hireData.slackHandle}! 📬`,
@@ -349,7 +404,7 @@ async function handleConfirmHire({ body, client }) {
           });
 
         } catch (messageError) {
-          console.error('Error sending welcome message:', messageError);
+          console.error('DEBUG - Error sending welcome message:', messageError);
           
           let errorMessage = '✅ Hire logged successfully, but ';
           if (messageError.message.includes('not_in_channel') || messageError.message.includes('cannot_dm_bot')) {
@@ -366,7 +421,7 @@ async function handleConfirmHire({ body, client }) {
           });
         }
       } catch (error) {
-        console.error('Error sending welcome message:', error);
+        console.error('DEBUG - Error in DM flow:', error);
         
         let errorMessage = '✅ Hire logged successfully, but ';
         if (error.message.includes('notification preference')) {
@@ -477,14 +532,21 @@ async function handleSubmitHireInfo({ body, ack, client }) {
       deelError = deelErr.message;
     }
 
-    // Create the complete hire record in Google Sheets
-    console.log('Creating hire record in Google Sheets...');
-    await createHireRecord(initialData, {
+    // Find and update the existing hire record in Google Sheets
+    console.log('Finding existing hire record...');
+    const rowNumber = await findLastRowBySlackHandle(initialData.slackHandle);
+    
+    if (!rowNumber) {
+      throw new Error('Could not find existing hire record to update');
+    }
+
+    console.log('Updating hire record in Google Sheets...');
+    await updateHireRecord(rowNumber, initialData, {
       ...supplementalData,
       deelCandidateId
     });
 
-    console.log('Google Sheets record created successfully');
+    console.log('Google Sheets record updated successfully');
 
     // Prepare success message
     let successMessage = `Thanks for submitting your information! 🎉\n\nI've recorded your details and someone from the team will be in touch with next steps. We're looking forward to working with you! 🚀`;
