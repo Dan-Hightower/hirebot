@@ -48,6 +48,8 @@ Return only a JSON object with these exact keys:
   "slackHandle": "slack handle in <@username> format, or null if not present"
 }`;
 
+  console.log('Sending prompt to OpenAI:', prompt);
+
   const completion = await openai.chat.completions.create({
     messages: [{ role: "user", content: prompt }],
     model: "gpt-3.5-turbo",
@@ -55,7 +57,9 @@ Return only a JSON object with these exact keys:
     response_format: { type: "json_object" }
   });
 
-  return JSON.parse(completion.choices[0].message.content);
+  const response = JSON.parse(completion.choices[0].message.content);
+  console.log('Parsed response from OpenAI:', JSON.stringify(response, null, 2));
+  return response;
 }
 
 module.exports = {
