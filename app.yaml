@@ -1,0 +1,20 @@
+runtime: nodejs20
+env: standard
+instance_class: F1
+
+automatic_scaling:
+  target_cpu_utilization: 0.65
+  min_instances: 1
+  max_instances: 1
+
+# Environment variables should be configured in Google Cloud Console
+# or using gcloud commands, not in this file
+env_variables:
+  SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN}
+  SLACK_SIGNING_SECRET: ${SLACK_SIGNING_SECRET}
+  OPENAI_API_KEY: ${OPENAI_API_KEY}
+  GOOGLE_SHEETS_ID: ${GOOGLE_SHEETS_ID}
+  DEEL_CLIENT_ID: ${DEEL_CLIENT_ID}
+  DEEL_CLIENT_SECRET: ${DEEL_CLIENT_SECRET}
+  # Google Sheets credentials should be stored as a service account key in Google Cloud Secret Manager
+  GOOGLE_SHEETS_CREDENTIALS: ${GOOGLE_SHEETS_CREDENTIALS}

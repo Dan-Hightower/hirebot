@@ -5,6 +5,8 @@ const DeelAPI = require('./deel');
 
 async function handleHireMessage(message, client) {
   try {
+    console.log('Starting handleHireMessage with:', JSON.stringify(message, null, 2));
+
     // Parse the message using OpenAI
     const parsedData = await parseHireMessage(message.text || '');
     console.log('Data from OpenAI:', JSON.stringify(parsedData, null, 2));
@@ -84,15 +86,6 @@ async function handleHireMessage(message, client) {
       hiringManager
     };
 
-    console.log('DEBUG - Creating button value with data:', JSON.stringify({
-      role: parsedData.role,
-      salary: parsedData.salary,
-      equity: parsedData.equity,
-      startDate: parsedData.startDate,
-      slackHandle: parsedData.slackHandle,
-      hiringManager
-    }, null, 2));
-
     // Add confirmation buttons
     confirmationBlocks.push({
       type: 'actions',
@@ -121,18 +114,47 @@ async function handleHireMessage(message, client) {
       ]
     });
 
-    // Send the message
-    await client.chat.postMessage({
-      channel: message.channel,
-      blocks: confirmationBlocks,
-      text: 'Please confirm the hire details' // Fallback text
-    });
+    // If we have a response_url, use it to update the "Processing..." message
+    if (message.response_url) {
+      await axios.post(message.response_url, {
+        blocks: confirmationBlocks,
+        text: 'Please confirm the hire details', // Fallback text
+        replace_original: true
+      });
+    } else {
+      // Otherwise send as a new message
+      await client.chat.postMessage({
+        channel: message.channel,
+        blocks: confirmationBlocks,
+        text: 'Please confirm the hire details' // Fallback text
+      });
+    }
   } catch (error) {
     console.error('Error handling hire message:', error);
-    await client.chat.postMessage({
-      channel: message.channel,
-      text: 'Sorry, I had trouble understanding that. Could you rephrase it? Format: `/hire @username as role for salary with equity starting date`'
-    });
+    
+    const errorMessage = 'Sorry, I had trouble understanding that. Could you rephrase it? Format: `/hire @username as role for salary with equity starting date`';
+    
+    // If we have a response_url, use it to update the "Processing..." message
+    if (message.response_url) {
+      try {
+        await axios.post(message.response_url, {
+          text: errorMessage,
+          replace_original: true
+        });
+      } catch (postError) {
+        console.error('Error posting to response_url:', postError);
+        // Fallback to regular message
+        await client.chat.postMessage({
+          channel: message.channel,
+          text: errorMessage
+        });
+      }
+    } else {
+      await client.chat.postMessage({
+        channel: message.channel,
+        text: errorMessage
+      });
+    }
   }
 }
 
@@ -443,9 +465,12 @@ async function handleConfirmHire({ body, client }) {
   } catch (error) {
     console.error('Error in handleConfirmHire:', error);
     
+    // Use the channel ID from the container for error messages
+    const channelId = body.container.channel_id;
     const thread_ts = body.message?.thread_ts || body.message?.ts;
+    
     await client.chat.postMessage({
-      channel: body.container.channel_id,
+      channel: channelId,
       thread_ts: thread_ts,
       text: '❌ Sorry, something went wrong while processing the hire. Please try again.'
     });
@@ -472,9 +497,7 @@ async function handleRejectHire({ body, client }) {
   }
 }
 
-async function handleSubmitHireInfo({ body, ack, client }) {
-  await ack();
-  
+async function handleSubmitHireInfo({ body, client }) {
   try {
     console.log('Processing form submission:', JSON.stringify(body.state.values, null, 2));
     

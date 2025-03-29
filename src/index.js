@@ -5,44 +5,15 @@ dotenv.config();
 // Verify environment variables are loaded
 console.log('OPENAI_API_KEY exists:', !!process.env.OPENAI_API_KEY);
 
-const { App } = require('@slack/bolt');
+const { App, ExpressReceiver } = require('@slack/bolt');
 const { handleHireMessage, handleConfirmHire, handleRejectHire, handleSubmitHireInfo } = require('./slack');
 const { setupGoogleSheets } = require('./sheets');
 const { parseHireMessage } = require('./openai');
-const fs = require('fs');
-const path = require('path');
-
-// Create logs directory if it doesn't exist
-if (!fs.existsSync('logs')) {
-  fs.mkdirSync('logs');
-}
-
-// Set up logging to file
-const logStream = fs.createWriteStream('logs/app.log', { flags: 'a' });
-const originalConsoleLog = console.log;
-const originalConsoleError = console.error;
-
-console.log = function() {
-  const timestamp = new Date().toISOString();
-  const args = Array.from(arguments);
-  const message = `[${timestamp}] ${args.join(' ')}\n`;
-  logStream.write(message);
-  originalConsoleLog.apply(console, args);
-};
-
-console.error = function() {
-  const timestamp = new Date().toISOString();
-  const args = Array.from(arguments);
-  const message = `[${timestamp}] ERROR: ${args.join(' ')}\n`;
-  logStream.write(message);
-  originalConsoleError.apply(console, args);
-};
 
 // Verify required environment variables
 const requiredEnvVars = [
   'SLACK_BOT_TOKEN',
   'SLACK_SIGNING_SECRET',
-  'SLACK_APP_TOKEN',
   'GOOGLE_SHEETS_ID'
 ];
 
@@ -53,22 +24,169 @@ for (const envVar of requiredEnvVars) {
   }
 }
 
-// Initialize the Slack app
+// Initialize the receiver
+const receiver = new ExpressReceiver({
+  signingSecret: process.env.SLACK_SIGNING_SECRET,
+  processBeforeResponse: true
+});
+
+// Initialize the Slack app with HTTP mode
 const app = new App({
   token: process.env.SLACK_BOT_TOKEN,
-  signingSecret: process.env.SLACK_SIGNING_SECRET,
-  socketMode: true,
-  appToken: process.env.SLACK_APP_TOKEN,
-  customRoutes: [
-    {
-      path: '/health',
-      method: ['GET'],
-      handler: (req, res) => {
-        res.writeHead(200);
-        res.end('Health check passed');
-      },
-    },
-  ]
+  receiver
+});
+
+// Initialize Google Sheets
+let sheetsInitialized = false;
+async function initializeGoogleSheets() {
+  if (!sheetsInitialized) {
+    try {
+      await setupGoogleSheets();
+      sheetsInitialized = true;
+      console.log('Google Sheets initialized successfully');
+    } catch (error) {
+      console.error('Failed to initialize Google Sheets:', error);
+      throw error;
+    }
+  }
+}
+
+// Add root endpoint with status page
+receiver.router.get('/', async (req, res) => {
+  try {
+    // Check Slack connection
+    const authTest = await app.client.auth.test();
+    // Check Google Sheets connection
+    await initializeGoogleSheets();
+    
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>HireBot Status</title>
+          <style>
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+              max-width: 800px;
+              margin: 0 auto;
+              padding: 2rem;
+              line-height: 1.5;
+            }
+            .status {
+              padding: 1rem;
+              border-radius: 8px;
+              margin: 1rem 0;
+              background-color: #e6ffe6;
+              border: 1px solid #00cc00;
+            }
+            .status-header {
+              display: flex;
+              align-items: center;
+              gap: 0.5rem;
+            }
+            .status-icon {
+              font-size: 1.5rem;
+            }
+            h1 {
+              color: #1a1a1a;
+              margin-bottom: 2rem;
+            }
+            .details {
+              margin-top: 1rem;
+              padding: 1rem;
+              background-color: #f5f5f5;
+              border-radius: 8px;
+            }
+          </style>
+        </head>
+        <body>
+          <h1>🤖 HireBot Status</h1>
+          <div class="status">
+            <div class="status-header">
+              <span class="status-icon">✅</span>
+              <h2>Bot is running properly!</h2>
+            </div>
+          </div>
+          <div class="details">
+            <p><strong>Connected to Slack as:</strong> ${authTest.user}</p>
+            <p><strong>Team:</strong> ${authTest.team}</p>
+            <p><strong>Environment:</strong> Google App Engine</p>
+            <p><strong>Services Status:</strong></p>
+            <ul>
+              <li>✅ Slack Connection</li>
+              <li>✅ Google Sheets Integration</li>
+              <li>✅ OpenAI Integration</li>
+            </ul>
+          </div>
+        </body>
+      </html>
+    `;
+    res.send(html);
+  } catch (error) {
+    const errorHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>HireBot Status - Error</title>
+          <style>
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+              max-width: 800px;
+              margin: 0 auto;
+              padding: 2rem;
+              line-height: 1.5;
+            }
+            .status {
+              padding: 1rem;
+              border-radius: 8px;
+              margin: 1rem 0;
+              background-color: #ffe6e6;
+              border: 1px solid #cc0000;
+            }
+            .status-header {
+              display: flex;
+              align-items: center;
+              gap: 0.5rem;
+            }
+            .status-icon {
+              font-size: 1.5rem;
+            }
+            h1 {
+              color: #1a1a1a;
+              margin-bottom: 2rem;
+            }
+            .error-details {
+              margin-top: 1rem;
+              padding: 1rem;
+              background-color: #f5f5f5;
+              border-radius: 8px;
+              font-family: monospace;
+              white-space: pre-wrap;
+            }
+          </style>
+        </head>
+        <body>
+          <h1>🤖 HireBot Status</h1>
+          <div class="status">
+            <div class="status-header">
+              <span class="status-icon">❌</span>
+              <h2>Bot is not running properly</h2>
+            </div>
+          </div>
+          <div class="error-details">
+            <p><strong>Error:</strong> ${error.message}</p>
+            <p><strong>Stack:</strong>\n${error.stack}</p>
+          </div>
+        </body>
+      </html>
+    `;
+    res.status(500).send(errorHtml);
+  }
+});
+
+// Add health check endpoint for automated health checks
+receiver.router.get('/health', (req, res) => {
+  res.send('OK');
 });
 
 // Verify bot permissions
@@ -85,167 +203,104 @@ app.client.auth.test()
     console.error('Error checking bot permissions:', error);
   });
 
-// Initialize Google Sheets
-setupGoogleSheets().catch(error => {
-  console.error('Failed to initialize Google Sheets:', error);
-  process.exit(1);
-});
-
 // Handle /hire slash command
 app.command('/hire', async ({ command, ack, respond }) => {
+  // Acknowledge the command immediately
   await ack();
   console.log('Received hire command:', command);
   
+  // Send initial response to user
+  await respond({
+    text: "Processing your request...",
+    response_type: 'ephemeral'
+  });
+  
+  // Process the request asynchronously
   try {
-    // Parse the message using OpenAI
-    const parsedData = await parseHireMessage(command.text || '');
-    const hiringManager = `<@${command.user_id}>`;
-    const hireData = { ...parsedData, hiringManager };
-
-    // Create confirmation message with more details
-    const confirmationBlocks = [
-      {
-        type: 'header',
-        text: {
-          type: 'plain_text',
-          text: '🎉 New Hire Details',
-          emoji: true
-        }
-      },
-      {
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: `Hey ${hiringManager}! I've parsed your hiring request. Here's what I understood:`
-        }
-      },
-      {
-        type: 'section',
-        fields: [
-          {
-            type: 'mrkdwn',
-            text: `*Role:*\n${parsedData.role}`
-          },
-          {
-            type: 'mrkdwn',
-            text: `*Salary:*\n${parsedData.salary}`
-          },
-          {
-            type: 'mrkdwn',
-            text: `*Equity:*\n${parsedData.equity}\n(${parsedData.shares})`
-          },
-          {
-            type: 'mrkdwn',
-            text: `*Start Date:*\n${parsedData.startDate}`
-          }
-        ]
-      }
-    ];
-
-    // Add Slack handle if present
-    if (parsedData.slackHandle) {
-      confirmationBlocks.push({
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: `*New Hire:* ${parsedData.slackHandle}`
-        }
-      });
-    }
-
-    // Add confirmation message
-    confirmationBlocks.push({
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: 'If everything looks correct, click *Confirm* to:\n• Log the hire in our tracking sheet\n• Send a welcome message to the new hire'
-      }
-    });
-
-    // Add confirmation buttons
-    confirmationBlocks.push({
-      type: 'actions',
-      elements: [
-        {
-          type: 'button',
-          text: {
-            type: 'plain_text',
-            text: '✅ Confirm',
-            emoji: true
-          },
-          style: 'primary',
-          action_id: 'confirm_hire',
-          value: JSON.stringify(hireData)
-        },
-        {
-          type: 'button',
-          text: {
-            type: 'plain_text',
-            text: '❌ Cancel',
-            emoji: true
-          },
-          style: 'danger',
-          action_id: 'reject_hire'
-        }
-      ]
-    });
-
-    await respond({
-      blocks: confirmationBlocks,
-      text: 'Please confirm the hire details',
-      response_type: 'in_channel'
-    });
+    await handleHireMessage({ 
+      text: command.text, 
+      user: command.user_id, 
+      channel: command.channel_id,
+      response_url: command.response_url // Pass response_url for later updates
+    }, app.client);
   } catch (error) {
     console.error('Error handling hire command:', error);
-    await respond({
-      text: "Sorry, I encountered an error processing your request. Please try again.",
-      response_type: 'ephemeral'
-    });
+    // Use response_url to update the message
+    try {
+      await app.client.chat.postEphemeral({
+        channel: command.channel_id,
+        user: command.user_id,
+        text: 'Sorry, something went wrong. Please try again or contact support.'
+      });
+    } catch (postError) {
+      console.error('Error posting error message:', postError);
+    }
   }
 });
 
 // Handle button actions
-app.action('confirm_hire', async ({ ack, body, client }) => {
+app.action('confirm_hire', async ({ body, ack }) => {
   await ack();
-  console.log('Confirm button clicked:', body);
-  
-  try {
-    await handleConfirmHire({ body, client });
-  } catch (error) {
-    console.error('Error in confirm action:', error);
-    await client.chat.postMessage({
-      channel: body.container.channel_id,
-      text: "❌ Sorry, something went wrong while processing the hire. Please try again."
-    });
-  }
+  await initializeGoogleSheets();
+  await handleConfirmHire({ body, client: app.client });
 });
 
-app.action('reject_hire', async ({ ack, body, client }) => {
+app.action('reject_hire', async ({ body, ack }) => {
   await ack();
-  console.log('Reject button clicked:', body);
-  
-  try {
-    await handleRejectHire({ body, client });
-  } catch (error) {
-    console.error('Error in reject action:', error);
-    await client.chat.postMessage({
-      channel: body.container.channel_id,
-      text: "❌ Sorry, something went wrong while cancelling the hire. Please try again."
-    });
-  }
+  await handleRejectHire({ body, client: app.client });
 });
 
-app.action('submit_hire_info', async ({ ack, body, client }) => {
-  await ack();
+app.action('submit_hire_info', async ({ body, ack, client }) => {
   console.log('Submit hire info button clicked:', body);
+  await ack();
+  await initializeGoogleSheets();
+  await handleSubmitHireInfo({ body, client });
+});
+
+// Handle modal submission
+app.view('submit_hire_info', async ({ ack, body, view, client }) => {
+  await ack();
   
   try {
-    await handleSubmitHireInfo({ body, ack, client });
-  } catch (error) {
-    console.error('Error in submit hire info action:', error);
+    const metadata = JSON.parse(view.private_metadata);
+    const values = view.state.values;
+    
+    // Create the submission data
+    const submissionData = {
+      fullName: values.full_name.full_name_input.value,
+      address: values.address.address_input.value,
+      personalEmail: values.personal_email.personal_email_input.value,
+      phoneNumber: values.phone_number.phone_number_input.value,
+      currentTitle: values.current_title?.current_title_input?.value || '',
+      ...metadata
+    };
+    
+    // Process the submission
+    await handleSubmitHireInfo({
+      body: {
+        actions: [{
+          value: JSON.stringify(metadata)
+        }],
+        state: {
+          values: view.state.values
+        },
+        user: body.user,
+        team: body.team,
+        channel: body.channel
+      },
+      client
+    });
+    
+    // Send a DM to confirm submission
     await client.chat.postMessage({
-      channel: body.container.channel_id,
-      text: "❌ Sorry, something went wrong while saving your information. Please try again."
+      channel: body.user.id,
+      text: "Thanks for submitting your information! I'll process it right away."
+    });
+  } catch (error) {
+    console.error('Error handling view submission:', error);
+    await client.chat.postMessage({
+      channel: body.user.id,
+      text: `Sorry, there was an error processing your submission: ${error.message}`
     });
   }
 });
@@ -255,35 +310,9 @@ app.error(async (error) => {
   console.error('An error occurred:', error);
 });
 
-// Socket mode connection handling
-let reconnectAttempts = 0;
-const MAX_RECONNECT_ATTEMPTS = 5;
-
-app.client.on('disconnect', async () => {
-  console.log('Socket Mode disconnected');
-  if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-    reconnectAttempts++;
-    console.log(`Attempting to reconnect (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
-    try {
-      await app.start();
-      console.log('Successfully reconnected!');
-      reconnectAttempts = 0;
-    } catch (error) {
-      console.error('Failed to reconnect:', error);
-    }
-  } else {
-    console.error('Max reconnection attempts reached. Please restart the application.');
-    process.exit(1);
-  }
-});
-
 // Start the app
 (async () => {
-  try {
-    await app.start();
-    console.log('⚡️ Hiring Bot is running!');
-  } catch (error) {
-    console.error('Failed to start app:', error);
-    process.exit(1);
-  }
+  const port = process.env.PORT || 3000;
+  await app.start(port);
+  console.log(`⚡️ Slack bot is running on port ${port}!`);
 })(); 

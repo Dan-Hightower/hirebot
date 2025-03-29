@@ -1,33 +1,25 @@
 # Dependencies
 node_modules/
-.env
-.env.local
-.env.*.local
-
-# Credentials
-credentials/
-google-credentials.json
-
-# Build output
-dist/
-build/
-.next/
-
-# Logs
-logs/
-*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# IDE/Editor specific
-.vscode/
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Google Cloud
+app.yaml.bak
+*.credentials.json
+service-account.json
+
+# IDE
 .idea/
+.vscode/
 *.swp
 *.swo
-.cursor/
-.cursorrules
 
-# OS specific
+# OS
 .DS_Store
 Thumbs.db 

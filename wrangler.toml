@@ -1,0 +1,23 @@
+name = "hirebot"
+main = "src/index.js"
+compatibility_date = "2024-03-26"
+
+# Use the nodejs_compat flag for better Node.js compatibility
+compatibility_flags = ["nodejs_compat"]
+
+# KV namespace for storing state
+kv_namespaces = [
+  { binding = "BOT_STATE", id = "create-this-in-dashboard" }
+]
+
+[vars]
+# Environment variables will be set in the Cloudflare dashboard
+# SLACK_BOT_TOKEN
+# SLACK_SIGNING_SECRET
+# OPENAI_API_KEY
+# GOOGLE_SHEETS_ID
+# DEEL_CLIENT_ID
+# DEEL_CLIENT_SECRET
+
+[triggers]
+crons = [] 

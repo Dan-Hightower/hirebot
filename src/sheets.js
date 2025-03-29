@@ -4,22 +4,49 @@ let sheets = null;
 
 async function setupGoogleSheets() {
   try {
+    console.log('Setting up Google Sheets connection...');
+    
+    // Get credentials from environment variable
+    if (!process.env.GOOGLE_SHEETS_CREDENTIALS) {
+      throw new Error('GOOGLE_SHEETS_CREDENTIALS environment variable is missing');
+    }
+
+    let credentials;
+    try {
+      credentials = JSON.parse(process.env.GOOGLE_SHEETS_CREDENTIALS);
+      console.log('Successfully parsed Google Sheets credentials');
+    } catch (error) {
+      console.error('Failed to parse GOOGLE_SHEETS_CREDENTIALS:', error);
+      throw new Error('Invalid GOOGLE_SHEETS_CREDENTIALS format');
+    }
+
+    if (!credentials.client_email || !credentials.private_key) {
+      throw new Error('Missing required fields in GOOGLE_SHEETS_CREDENTIALS');
+    }
+
+    console.log('Initializing Google Auth with service account:', credentials.client_email);
+    
     const auth = new google.auth.GoogleAuth({
-      keyFile: process.env.GOOGLE_SHEETS_CREDENTIALS_PATH,
-      scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+      credentials,
+      scopes: ['https://www.googleapis.com/auth/spreadsheets']
     });
 
+    console.log('Getting auth client...');
     const client = await auth.getClient();
     sheets = google.sheets({ version: 'v4', auth: client });
 
-    // Verify access by getting sheet metadata
+    console.log('Verifying access to spreadsheet...');
     const response = await sheets.spreadsheets.get({
       spreadsheetId: process.env.GOOGLE_SHEETS_ID
     });
     
-    console.log(`Connected to sheet: ${response.data.properties?.title}`);
+    console.log(`Successfully connected to sheet: ${response.data.properties?.title}`);
+    return sheets;
   } catch (error) {
     console.error('Failed to initialize Google Sheets:', error);
+    if (error.response) {
+      console.error('API Response:', error.response.data);
+    }
     throw error;
   }
 }
