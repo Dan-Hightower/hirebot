@@ -7,10 +7,12 @@ async function handleHireMessage(message, client) {
   try {
     // Parse the message using OpenAI
     const parsedData = await parseHireMessage(message.text || '');
+    console.log('Data from OpenAI:', JSON.stringify(parsedData, null, 2));
 
     // Add hiring manager info
     const hiringManager = `<@${message.user}>`;
     const initialData = { ...parsedData, hiringManager };
+    console.log('Initial data before button:', JSON.stringify(initialData, null, 2));
 
     // Store the initial data (but don't write to sheets yet)
     await appendHireData(initialData);
@@ -75,6 +77,18 @@ async function handleHireMessage(message, client) {
       }
     });
 
+    // Create button value with explicit fields
+    const buttonValue = {
+      role: parsedData.role,
+      salary: parsedData.salary,
+      equity: parsedData.equity,
+      startDate: parsedData.startDate,
+      slackHandle: parsedData.slackHandle,
+      hiringManager
+    };
+
+    console.log('Button value before stringify:', JSON.stringify(buttonValue, null, 2));
+
     // Add confirmation buttons
     confirmationBlocks.push({
       type: 'actions',
@@ -88,7 +102,7 @@ async function handleHireMessage(message, client) {
           },
           style: 'primary',
           action_id: 'confirm_hire',
-          value: JSON.stringify(initialData)
+          value: JSON.stringify(buttonValue)
         },
         {
           type: 'button',
@@ -119,14 +133,23 @@ async function handleHireMessage(message, client) {
 }
 
 async function handleConfirmHire({ body, client }) {
-  console.log('Handling confirm hire:', body);
+  console.log('Handling confirm hire:', JSON.stringify(body, null, 2));
   
   try {
-    const hireData = JSON.parse(body.actions[0].value);
-    console.log('Parsed hire data:', hireData);
-    console.log('Slack handle before processing:', hireData.slackHandle);
+    const buttonValue = body.actions[0].value;
+    console.log('Raw button value:', buttonValue);
+    
+    const hireData = JSON.parse(buttonValue);
+    console.log('Parsed hire data from button:', JSON.stringify(hireData, null, 2));
+
+    // Verify salary and equity are present
+    if (!hireData.salary || !hireData.equity) {
+      console.error('Missing salary or equity in hire data:', hireData);
+      throw new Error('Missing required salary or equity data');
+    }
 
     // Log to Google Sheets
+    console.log('About to call appendHireData with:', JSON.stringify(hireData, null, 2));
     await appendHireData(hireData);
 
     // Get the thread_ts from the original message

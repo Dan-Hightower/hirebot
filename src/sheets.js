@@ -25,8 +25,45 @@ async function setupGoogleSheets() {
 }
 
 async function appendHireData(initialData) {
-  // Store the initial hire data but don't write to sheets yet
-  return initialData;
+  if (!sheets) {
+    throw new Error('Google Sheets not initialized');
+  }
+
+  try {
+    console.log('appendHireData received:', JSON.stringify(initialData, null, 2));
+    
+    const values = [
+      [
+        new Date().toISOString(),           // A: Timestamp
+        initialData.hiringManager || 'N/A',  // B: Hiring Manager
+        initialData.role,                    // C: Role
+        initialData.salary,                  // D: Salary
+        initialData.equity,                  // E: Equity
+        initialData.startDate,               // F: Start Date
+        initialData.slackHandle || 'N/A'     // G: Slack Handle
+      ]
+    ];
+
+    console.log('Preparing to write values to sheet:', JSON.stringify(values, null, 2));
+
+    const request = {
+      spreadsheetId: process.env.GOOGLE_SHEETS_ID,
+      range: 'Sheet1!A:G',
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: values
+      }
+    };
+
+    const response = await sheets.spreadsheets.values.append(request);
+    console.log('Google Sheets API Response:', JSON.stringify(response.data, null, 2));
+    console.log(`Appended initial hire data with ${response.data.updates?.updatedCells} cells`);
+    return initialData;
+  } catch (error) {
+    console.error('Failed to append initial hire data to Google Sheets:', error);
+    console.error('Error details:', error.response?.data || error);
+    throw error;
+  }
 }
 
 async function createHireRecord(initialData, supplementalData) {
@@ -35,6 +72,11 @@ async function createHireRecord(initialData, supplementalData) {
   }
 
   try {
+    console.log('createHireRecord received:', {
+      initialData: JSON.stringify(initialData, null, 2),
+      supplementalData: JSON.stringify(supplementalData, null, 2)
+    });
+
     const values = [
       [
         new Date().toISOString(),           // A: Timestamp
@@ -52,6 +94,8 @@ async function createHireRecord(initialData, supplementalData) {
       ]
     ];
 
+    console.log('Preparing to write values to sheet:', JSON.stringify(values, null, 2));
+
     const request = {
       spreadsheetId: process.env.GOOGLE_SHEETS_ID,
       range: 'Sheet1!A:L',
@@ -62,10 +106,12 @@ async function createHireRecord(initialData, supplementalData) {
     };
 
     const response = await sheets.spreadsheets.values.append(request);
+    console.log('Google Sheets API Response:', JSON.stringify(response.data, null, 2));
     console.log(`Created new hire record with ${response.data.updates?.updatedCells} cells`);
     return response.data;
   } catch (error) {
     console.error('Failed to create hire record in Google Sheets:', error);
+    console.error('Error details:', error.response?.data || error);
     throw error;
   }
 }
