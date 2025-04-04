@@ -4,6 +4,13 @@ A Slack bot that helps streamline the process of kicking off new employee hires 
 
 This repo assumes Deel is the HRIS/Payroll system and you want a Google Sheets backup of all hires, but you should hit your HRIS/payroll API and cap table platform directly if possible.
 
+## How it works
+1. use /hire command in Slack, tag the new hire (so you'll have added them to Slack already), give salary, equity, and start date.
+2. the bot does the rest.
+
+![image](https://github.com/user-attachments/assets/17e79c81-988c-455b-b7dd-833beff85da3)
+![image](https://github.com/user-attachments/assets/5a4fc119-d2c4-4f74-86c7-0188c178d809)
+
 ## Features
 
 - Parse hiring messages using OpenAI
