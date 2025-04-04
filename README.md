@@ -59,5 +59,6 @@ In Slack, use the `/hire` command with natural language:
 The bot will:
 1. Parse the message
 2. Show a confirmation with the extracted details
-3. On confirmation, log to Google Sheets
-4. Optionally send a DM to the new hire 
+3. DM the new hire for additional details
+4. Once all detailed collected, post it to Deel API
+5. Log the details to Google Sheets 
