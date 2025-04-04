@@ -16,6 +16,7 @@ This repo assumes Deel is the HRIS/Payroll system and you want a Google Sheets b
 - Parse hiring messages using OpenAI
 - Extract structured data (role, salary, equity, start date)
 - Confirm details with interactive buttons
+- Create new candidate in Deel
 - Log confirmed hires to Google Sheets
 - Optional: DM new hires when confirmed
 
