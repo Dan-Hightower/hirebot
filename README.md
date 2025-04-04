@@ -24,6 +24,8 @@ This repo assumes Deel is the HRIS/Payroll system and you want a Google Sheets b
    SLACK_BOT_TOKEN=your_slack_bot_token
    SLACK_SIGNING_SECRET=your_slack_signing_secret
    OPENAI_API_KEY=your_openai_api_key
+   DEEL_API_TOKEN=your_deel_token
+   DEEL_CLIENT_ID=your_deel_client_id
    GOOGLE_SHEETS_CREDENTIALS_PATH=./credentials/google-creds.json
    GOOGLE_SHEETS_ID=your_sheet_id
    ```
